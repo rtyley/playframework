@@ -93,14 +93,22 @@ class CSRFAction(next: EssentialAction,
       val requestWithNewToken = request.copy(tags = request.tags + (Token.RequestTag -> newToken))
 
       // Once done, add it to the result
-      next(requestWithNewToken).map(result =>
-        CSRFAction.addTokenToResponse(tokenName, cookieName, secureCookie, newToken, request, result))
+      next(requestWithNewToken).map {
+        result =>
+          if (isCached(result)) {
+            filterLogger.trace("[CSRF] Not adding token to cached response")
+            result
+          } else CSRFAction.addTokenToResponse(tokenName, cookieName, secureCookie, newToken, request, result)
+      }
 
     } else {
       filterLogger.trace("[CSRF] No check necessary")
       next(request)
     }
   }
+
+  private def isCached(result: Result): Boolean =
+    result.header.headers.get(CACHE_CONTROL).fold(false)(!_.contains("no-cache"))
 
   private def checkFormBody = checkBody[Map[String, Seq[String]]](tolerantFormUrlEncoded, identity) _
   private def checkMultipartBody = checkBody[MultipartFormData[Unit]](multipartFormData[Unit]({
